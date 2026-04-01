@@ -126,6 +126,99 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
     }
   }
 
+  // ─── Add / Edit / Delete Emergency Contacts ─────────────────────
+  void _showAddContactDialog() {
+    _showContactDialog(null, -1);
+  }
+
+  void _showEditContactDialog(Map<String, String> contact, int index) {
+    _showContactDialog(contact, index);
+  }
+
+  void _showContactDialog(Map<String, String>? contact, int index) {
+    final nameCtrl = TextEditingController(text: contact?['name'] ?? '');
+    final phoneCtrl = TextEditingController(text: contact?['phone'] ?? '');
+    final relationCtrl = TextEditingController(text: contact?['relation'] ?? '');
+    final isEdit = contact != null;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(isEdit ? 'Edit Contact' : 'Add Contact'),
+        content: SizedBox(
+          width: 350,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Name',
+                  prefixIcon: const Icon(Icons.person),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: 'Phone Number',
+                  hintText: '+91XXXXXXXXXX',
+                  prefixIcon: const Icon(Icons.phone),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: relationCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Relation',
+                  hintText: 'Mother, Father, Doctor...',
+                  prefixIcon: const Icon(Icons.group),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          if (isEdit)
+            TextButton(
+              onPressed: () {
+                setState(() => _emergencyContacts.removeAt(index));
+                Navigator.pop(ctx);
+              },
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final name = nameCtrl.text.trim();
+              final phone = phoneCtrl.text.trim();
+              final relation = relationCtrl.text.trim();
+              if (name.isEmpty || phone.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Name and phone are required'), backgroundColor: Colors.orange),
+                );
+                return;
+              }
+              setState(() {
+                if (isEdit) {
+                  _emergencyContacts[index] = {'name': name, 'phone': phone, 'relation': relation};
+                } else {
+                  _emergencyContacts.add({'name': name, 'phone': phone, 'relation': relation});
+                }
+              });
+              Navigator.pop(ctx);
+            },
+            child: Text(isEdit ? 'Save' : 'Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _launchUrl(String url) async {
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
@@ -422,11 +515,36 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
             ],
           ),
           const SizedBox(height: 6),
-          Text('One-tap call or message',
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+          Row(
+            children: [
+              Expanded(
+                child: Text('One-tap call or message',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+              ),
+              Material(
+                color: Colors.teal.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: _showAddContactDialog,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.person_add, size: 16, color: Colors.teal),
+                        SizedBox(width: 4),
+                        Text('Add', style: TextStyle(fontSize: 12, color: Colors.teal, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
 
-          ..._emergencyContacts.map((contact) => _contactCard(theme, contact, isMobile)),
+          ...List.generate(_emergencyContacts.length, (i) => _contactCard(theme, _emergencyContacts[i], isMobile, i)),
 
           const SizedBox(height: 12),
           const Divider(height: 1),
@@ -444,7 +562,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
     );
   }
 
-  Widget _contactCard(ThemeData theme, Map<String, String> contact, bool isMobile) {
+  Widget _contactCard(ThemeData theme, Map<String, String> contact, bool isMobile, int index) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -472,6 +590,8 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
               ],
             ),
           ),
+          _iconAction(Icons.edit, Colors.grey, () => _showEditContactDialog(contact, index)),
+          const SizedBox(width: 4),
           _iconAction(Icons.phone, Colors.green, () => _callNumber(contact['phone']!)),
           const SizedBox(width: 4),
           _iconAction(Icons.message, Colors.blue,
