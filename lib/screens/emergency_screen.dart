@@ -1,7 +1,156 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-class EmergencyScreen extends StatelessWidget {
+class EmergencyScreen extends StatefulWidget {
   const EmergencyScreen({super.key});
+
+  @override
+  State<EmergencyScreen> createState() => _EmergencyScreenState();
+}
+
+class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProviderStateMixin {
+  bool _gpsLoading = false;
+  String? _locationStatus;
+  double? _lat, _lon;
+  late AnimationController _pulseController;
+
+  // Emergency contacts (stored in user profile)
+  final List<Map<String, String>> _emergencyContacts = [
+    {'name': 'Mom', 'phone': '+919876543210', 'relation': 'Mother'},
+    {'name': 'Dad', 'phone': '+919876543211', 'relation': 'Father'},
+    {'name': 'Dr. Sharma', 'phone': '+919876543212', 'relation': 'Doctor'},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _autoDetectLocation();
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _autoDetectLocation() async {
+    setState(() {
+      _gpsLoading = true;
+      _locationStatus = 'Detecting your location...';
+    });
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() {
+          _locationStatus = 'GPS disabled – enable for nearby facilities';
+          _gpsLoading = false;
+        });
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() {
+            _locationStatus = 'Location permission denied';
+            _gpsLoading = false;
+          });
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _locationStatus = 'Location permission permanently denied';
+          _gpsLoading = false;
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      setState(() {
+        _lat = position.latitude;
+        _lon = position.longitude;
+        _locationStatus = 'Location detected';
+        _gpsLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _locationStatus = 'Could not detect location';
+        _gpsLoading = false;
+      });
+    }
+  }
+
+  // ─── Google Maps Launch Helpers ────────────────────────────────────
+  Future<void> _openNearbyHospitals() async {
+    final url = _lat != null
+        ? 'https://www.google.com/maps/search/hospitals+near+me/@$_lat,$_lon,14z'
+        : 'https://www.google.com/maps/search/hospitals+near+me';
+    await _launchUrl(url);
+  }
+
+  Future<void> _openNearbyPharmacies() async {
+    final url = _lat != null
+        ? 'https://www.google.com/maps/search/pharmacy+near+me/@$_lat,$_lon,14z'
+        : 'https://www.google.com/maps/search/pharmacy+near+me';
+    await _launchUrl(url);
+  }
+
+  Future<void> _openNearbyClinics() async {
+    final url = _lat != null
+        ? 'https://www.google.com/maps/search/clinic+near+me/@$_lat,$_lon,14z'
+        : 'https://www.google.com/maps/search/clinic+near+me';
+    await _launchUrl(url);
+  }
+
+  Future<void> _callNumber(String phone) async {
+    await _launchUrl('tel:$phone');
+  }
+
+  Future<void> _sendSms(String phone, String message) async {
+    await _launchUrl('sms:$phone?body=${Uri.encodeComponent(message)}');
+  }
+
+  Future<void> _openWhatsApp(String phone, String message) async {
+    final cleanPhone = phone.replaceAll('+', '').replaceAll(' ', '');
+    await _launchUrl('https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}');
+  }
+
+  Future<void> _shareLocation() async {
+    if (_lat == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location not detected yet. Please wait or enable GPS.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+    final mapLink = 'https://www.google.com/maps?q=$_lat,$_lon';
+    final message = 'EMERGENCY! I need help. My current location: $mapLink';
+
+    // Send to first emergency contact via WhatsApp
+    if (_emergencyContacts.isNotEmpty) {
+      await _openWhatsApp(_emergencyContacts[0]['phone']!, message);
+    }
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      // Fallback: try launching anyway (works on web)
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -11,30 +160,138 @@ class EmergencyScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Emergency Panel', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 24),
-
+          // ─── Header ────────────────────────────────────────────
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Emergency breathing steps
-              Expanded(flex: 1, child: _buildBreathingSteps(theme)),
-              const SizedBox(width: 20),
-              // Quick actions
-              Expanded(flex: 1, child: _buildQuickActions(theme)),
+              Text('Emergency Panel', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+              const Spacer(),
+              // GPS status
+              AnimatedBuilder(
+                animation: _pulseController,
+                builder: (context, child) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _lat != null
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.orange.withValues(alpha: 0.05 + _pulseController.value * 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _lat != null ? Colors.green.withValues(alpha: 0.3) : Colors.orange.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_gpsLoading)
+                        const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      else
+                        Icon(
+                          _lat != null ? Icons.gps_fixed : Icons.gps_off,
+                          size: 14,
+                          color: _lat != null ? Colors.green : Colors.orange,
+                        ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _locationStatus ?? 'Detecting...',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: _lat != null ? Colors.green : Colors.orange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
-
           const SizedBox(height: 24),
+
+          // ─── SOS Banner ────────────────────────────────────────
+          AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, child) => Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.red.shade600.withValues(alpha: 0.9 + _pulseController.value * 0.1),
+                    Colors.red.shade800,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withValues(alpha: 0.2 + _pulseController.value * 0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.emergency, color: Colors.white, size: 32),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Emergency SOS', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text('Tap buttons below for immediate help',
+                            style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  // Quick call ambulance
+                  Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _callNumber('102'),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        child: Row(
+                          children: [
+                            Icon(Icons.phone, color: Colors.red.shade700, size: 18),
+                            const SizedBox(width: 6),
+                            Text('Call 102', style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // ─── Nearby Facilities (Google Maps) ───────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _buildNearbyFacilities(theme)),
+              const SizedBox(width: 20),
+              Expanded(child: _buildEmergencyContacts(theme)),
+            ],
+          ),
+          const SizedBox(height: 20),
 
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Nearest hospitals
-              Expanded(flex: 1, child: _buildNearestHospitals(theme)),
+              Expanded(child: _buildBreathingSteps(theme)),
               const SizedBox(width: 20),
-              // Medication awareness
-              Expanded(flex: 1, child: _buildMedicationAwareness(theme)),
+              Expanded(child: _buildMedicationAwareness(theme)),
             ],
           ),
         ],
@@ -42,6 +299,258 @@ class EmergencyScreen extends StatelessWidget {
     );
   }
 
+  // ─── Nearby Facilities Card ────────────────────────────────────────
+  Widget _buildNearbyFacilities(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.map, color: Colors.blue, size: 22),
+              const SizedBox(width: 8),
+              Text('Nearby Facilities', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text('Opens Google Maps with your location',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+          const SizedBox(height: 16),
+
+          // Hospital button
+          _facilityButton(
+            theme,
+            icon: Icons.local_hospital,
+            title: 'Nearest Hospital',
+            subtitle: 'Find hospitals near your location',
+            color: Colors.red,
+            onTap: _openNearbyHospitals,
+          ),
+          const SizedBox(height: 12),
+
+          // Pharmacy button
+          _facilityButton(
+            theme,
+            icon: Icons.local_pharmacy,
+            title: 'Nearest Pharmacy',
+            subtitle: 'Find pharmacies & medical stores',
+            color: Colors.green,
+            onTap: _openNearbyPharmacies,
+          ),
+          const SizedBox(height: 12),
+
+          // Clinic button
+          _facilityButton(
+            theme,
+            icon: Icons.medical_services,
+            title: 'Nearest Clinic',
+            subtitle: 'Find clinics & health centers',
+            color: Colors.blue,
+            onTap: _openNearbyClinics,
+          ),
+          const SizedBox(height: 12),
+
+          // Share location button
+          _facilityButton(
+            theme,
+            icon: Icons.share_location,
+            title: 'Share Live Location',
+            subtitle: 'Send location to emergency contact via WhatsApp',
+            color: Colors.purple,
+            onTap: _shareLocation,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _facilityButton(
+    ThemeData theme, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: color.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                    Text(subtitle,
+                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.open_in_new, size: 14, color: color),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Emergency Contacts Card ───────────────────────────────────────
+  Widget _buildEmergencyContacts(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.contacts, color: Colors.deepOrange, size: 22),
+              const SizedBox(width: 8),
+              Text('Emergency Contacts', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text('One-tap call or message',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+          const SizedBox(height: 16),
+
+          // Contact cards
+          ..._emergencyContacts.map((contact) => _contactCard(theme, contact)),
+
+          const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 8),
+
+          // Government emergency numbers
+          Text('Government Helplines', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          _helplineButton(theme, '102', 'Ambulance', Colors.red),
+          const SizedBox(height: 6),
+          _helplineButton(theme, '108', 'Emergency Medical', Colors.blue),
+          const SizedBox(height: 6),
+          _helplineButton(theme, '112', 'National Emergency', Colors.orange),
+        ],
+      ),
+    );
+  }
+
+  Widget _contactCard(ThemeData theme, Map<String, String> contact) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.deepOrange.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.1)),
+      ),
+      child: Row(
+        children: [
+          // Avatar
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.deepOrange.withValues(alpha: 0.1),
+            child: Text(
+              contact['name']![0],
+              style: TextStyle(color: Colors.deepOrange.shade700, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(contact['name']!, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                Text('${contact['relation']} • ${contact['phone']}',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+              ],
+            ),
+          ),
+          // Action buttons
+          _iconAction(Icons.phone, Colors.green, () => _callNumber(contact['phone']!)),
+          const SizedBox(width: 6),
+          _iconAction(Icons.message, Colors.blue,
+              () => _sendSms(contact['phone']!, 'EMERGENCY! I need help. Please respond immediately.')),
+          const SizedBox(width: 6),
+          _iconAction(Icons.chat, const Color(0xFF25D366),
+              () => _openWhatsApp(contact['phone']!, 'EMERGENCY! I need help urgently. Please call me or come to my location.')),
+        ],
+      ),
+    );
+  }
+
+  Widget _iconAction(IconData icon, Color color, VoidCallback onTap) {
+    return Material(
+      color: color.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 18, color: color),
+        ),
+      ),
+    );
+  }
+
+  Widget _helplineButton(ThemeData theme, String number, String label, Color color) {
+    return Material(
+      color: color.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _callNumber(number),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Icon(Icons.phone, size: 16, color: color),
+              const SizedBox(width: 10),
+              Text(number, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold, color: color)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
+              Icon(Icons.call, size: 16, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Breathing Steps ───────────────────────────────────────────────
   Widget _buildBreathingSteps(ThemeData theme) {
     final steps = [
       {'title': 'Stop & Sit Upright', 'desc': 'Find a comfortable position and sit upright to open your airways.'},
@@ -83,7 +592,10 @@ class EmergencyScreen extends StatelessWidget {
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.red.shade200),
                   ),
-                  child: Center(child: Text('${i + 1}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade700, fontSize: 13))),
+                  child: Center(
+                    child: Text('${i + 1}',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade700, fontSize: 13)),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -91,7 +603,9 @@ class EmergencyScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(steps[i]['title']!, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                      Text(steps[i]['desc']!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
+                      Text(steps[i]['desc']!,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
                     ],
                   ),
                 ),
@@ -103,124 +617,7 @@ class EmergencyScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildQuickActions(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Quick Actions', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          _actionButton(theme, Icons.phone, 'Call Emergency Contact', 'Mom – +91 98765 43210', Colors.red),
-          const SizedBox(height: 12),
-          _actionButton(theme, Icons.local_hospital, 'Call Ambulance', '102 / 108', Colors.blue),
-          const SizedBox(height: 12),
-          _actionButton(theme, Icons.medical_services, 'Nearest Hospital', 'Lilavati Hospital – 1.2 km', Colors.green),
-          const SizedBox(height: 12),
-          _actionButton(theme, Icons.share_location, 'Share Live Location', 'Send to emergency contact', Colors.purple),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionButton(ThemeData theme, IconData icon, String title, String subtitle, Color color) {
-    return Material(
-      color: color.withValues(alpha: 0.05),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () {},
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
-                  ],
-                ),
-              ),
-              Icon(Icons.arrow_forward_ios, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNearestHospitals(ThemeData theme) {
-    final hospitals = [
-      {'name': 'Lilavati Hospital', 'dist': '1.2 km', 'type': 'Multi-Specialty'},
-      {'name': 'Holy Family Hospital', 'dist': '2.8 km', 'type': 'General'},
-      {'name': 'Hinduja Hospital', 'dist': '3.5 km', 'type': 'Pulmonology Center'},
-    ];
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.local_hospital, color: Colors.blue, size: 22),
-              const SizedBox(width: 8),
-              Text('Nearest Hospitals', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...hospitals.map((h) => Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue.withValues(alpha: 0.03),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.blue.withValues(alpha: 0.1)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.place, color: Colors.blue, size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(h['name']!, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                      Text(h['type']!, style: theme.textTheme.bodySmall),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                  child: Text(h['dist']!, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade700)),
-                ),
-              ],
-            ),
-          )),
-        ],
-      ),
-    );
-  }
-
+  // ─── Medication Awareness ──────────────────────────────────────────
   Widget _buildMedicationAwareness(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -251,7 +648,10 @@ class EmergencyScreen extends StatelessWidget {
               children: [
                 const Icon(Icons.info_outline, color: Colors.amber, size: 18),
                 const SizedBox(width: 8),
-                Expanded(child: Text('This is for awareness only – not a prescription.', style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic))),
+                Expanded(
+                  child: Text('This is for awareness only – not a prescription.',
+                      style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic)),
+                ),
               ],
             ),
           ),
@@ -279,7 +679,8 @@ class EmergencyScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(name, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-              Text(desc, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
+              Text(desc,
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
             ],
           ),
         ),

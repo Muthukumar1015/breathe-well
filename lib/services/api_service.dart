@@ -90,6 +90,49 @@ class ApiService {
     return null;
   }
 
+  /// Reverse geocode lat/lon to a place name
+  static Future<String?> reverseGeocode(double lat, double lon) async {
+    try {
+      final response = await http.get(Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?lat=$lat&lon=$lon&format=json&zoom=10',
+      )).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final address = data['address'];
+        if (address != null) {
+          final city = address['city'] ?? address['town'] ?? address['village'] ?? address['county'] ?? '';
+          final state = address['state'] ?? address['country'] ?? '';
+          return '$city, $state';
+        }
+        return data['display_name'] as String?;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Search location suggestions for autocomplete
+  static Future<List<({String name, double lat, double lon})>> searchLocations(String query) async {
+    if (query.length < 2) return [];
+    final uri = Uri.parse(
+      'https://geocoding-api.open-meteo.com/v1/search?name=${Uri.encodeComponent(query)}&count=5&language=en&format=json',
+    );
+    try {
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final results = data['results'] as List?;
+        if (results != null) {
+          return results.map((r) => (
+            name: '${r['name']}, ${r['admin1'] ?? r['country']}',
+            lat: (r['latitude'] as num).toDouble(),
+            lon: (r['longitude'] as num).toDouble(),
+          )).toList();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
   /// Fetch 7-day hourly AQI history for analytics (FREE, no key)
   static Future<List<Map<String, dynamic>>?> fetchWeeklyAqi(double lat, double lon) async {
     final uri = Uri.parse(
