@@ -84,6 +84,7 @@ class _MainShellState extends State<MainShell> {
     final ageCtrl = TextEditingController(text: '${_profile.age}');
     final locationCtrl = TextEditingController(text: _profile.location);
     var selectedCondition = _profile.condition;
+    final isMobile = MediaQuery.of(context).size.width < 600;
 
     showDialog(
       context: context,
@@ -91,7 +92,7 @@ class _MainShellState extends State<MainShell> {
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('Edit Profile'),
           content: SizedBox(
-            width: 400,
+            width: isMobile ? double.maxFinite : 400,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -146,7 +147,6 @@ class _MainShellState extends State<MainShell> {
                   _profile.location = newLocation;
                   _profile.condition = selectedCondition;
                 });
-                // Fetch real data for new city
                 _dataProvider.loadCity(newLocation.split(',').first.trim());
                 Navigator.pop(ctx);
               },
@@ -165,6 +165,7 @@ class _MainShellState extends State<MainShell> {
           profile: _profile,
           onEditProfile: _showEditProfileDialog,
           dataProvider: _dataProvider,
+          onEmergency: () => setState(() => _selectedIndex = 4),
         );
       case 1:
         return BreathingScreen(profile: _profile);
@@ -181,6 +182,7 @@ class _MainShellState extends State<MainShell> {
           profile: _profile,
           onEditProfile: _showEditProfileDialog,
           dataProvider: _dataProvider,
+          onEmergency: () => setState(() => _selectedIndex = 4),
         );
     }
   }
@@ -188,6 +190,38 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 768;
+
+    if (isMobile) {
+      return _buildMobileLayout(theme);
+    }
+    return _buildDesktopLayout(theme);
+  }
+
+  // ─── Mobile Layout: Bottom Navigation ──────────────────────────────
+  Widget _buildMobileLayout(ThemeData theme) {
+    return Scaffold(
+      body: Container(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        child: _buildScreen(),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+        height: 65,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        destinations: _navItems.map((item) => NavigationDestination(
+          icon: Icon(item.icon, size: 22),
+          selectedIcon: Icon(item.icon, size: 22, color: Colors.teal),
+          label: item.label,
+        )).toList(),
+      ),
+    );
+  }
+
+  // ─── Desktop Layout: Sidebar ───────────────────────────────────────
+  Widget _buildDesktopLayout(ThemeData theme) {
     return Scaffold(
       body: Row(
         children: [
@@ -201,7 +235,6 @@ class _MainShellState extends State<MainShell> {
             child: Column(
               children: [
                 const SizedBox(height: 24),
-                // Logo
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
@@ -223,7 +256,6 @@ class _MainShellState extends State<MainShell> {
                   ),
                 ),
                 const SizedBox(height: 32),
-                // Nav items
                 ...List.generate(_navItems.length, (i) {
                   final item = _navItems[i];
                   final isSelected = _selectedIndex == i;
@@ -260,7 +292,6 @@ class _MainShellState extends State<MainShell> {
                   );
                 }),
                 const Spacer(),
-                // Data source indicator
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Container(
@@ -294,17 +325,12 @@ class _MainShellState extends State<MainShell> {
                           ),
                         ),
                         if (_dataProvider.loading)
-                          const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
+                          const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(height: 8),
-                // Bottom info
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: Container(
@@ -333,7 +359,6 @@ class _MainShellState extends State<MainShell> {
               ],
             ),
           ),
-          // Main content
           Expanded(
             child: Container(
               color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),

@@ -15,7 +15,6 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
   double? _lat, _lon;
   late AnimationController _pulseController;
 
-  // Emergency contacts (stored in user profile)
   final List<Map<String, String>> _emergencyContacts = [
     {'name': 'Mom', 'phone': '+919876543210', 'relation': 'Mother'},
     {'name': 'Dad', 'phone': '+919876543211', 'relation': 'Father'},
@@ -41,16 +40,13 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
   Future<void> _autoDetectLocation() async {
     setState(() {
       _gpsLoading = true;
-      _locationStatus = 'Detecting your location...';
+      _locationStatus = 'Detecting...';
     });
 
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        setState(() {
-          _locationStatus = 'GPS disabled – enable for nearby facilities';
-          _gpsLoading = false;
-        });
+        setState(() { _locationStatus = 'GPS disabled'; _gpsLoading = false; });
         return;
       }
 
@@ -58,19 +54,13 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          setState(() {
-            _locationStatus = 'Location permission denied';
-            _gpsLoading = false;
-          });
+          setState(() { _locationStatus = 'Permission denied'; _gpsLoading = false; });
           return;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        setState(() {
-          _locationStatus = 'Location permission permanently denied';
-          _gpsLoading = false;
-        });
+        setState(() { _locationStatus = 'Permission denied'; _gpsLoading = false; });
         return;
       }
 
@@ -84,14 +74,10 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
         _gpsLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _locationStatus = 'Could not detect location';
-        _gpsLoading = false;
-      });
+      setState(() { _locationStatus = 'Detection failed'; _gpsLoading = false; });
     }
   }
 
-  // ─── Google Maps Launch Helpers ────────────────────────────────────
   Future<void> _openNearbyHospitals() async {
     final url = _lat != null
         ? 'https://www.google.com/maps/search/hospitals+near+me/@$_lat,$_lon,14z'
@@ -129,14 +115,12 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
   Future<void> _shareLocation() async {
     if (_lat == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location not detected yet. Please wait or enable GPS.'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('Location not detected yet.'), backgroundColor: Colors.orange),
       );
       return;
     }
     final mapLink = 'https://www.google.com/maps?q=$_lat,$_lon';
-    final message = 'EMERGENCY! I need help. My current location: $mapLink';
-
-    // Send to first emergency contact via WhatsApp
+    final message = 'EMERGENCY! I need help. My location: $mapLink';
     if (_emergencyContacts.isNotEmpty) {
       await _openWhatsApp(_emergencyContacts[0]['phone']!, message);
     }
@@ -147,7 +131,6 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      // Fallback: try launching anyway (works on web)
       await launchUrl(uri, mode: LaunchMode.platformDefault);
     }
   }
@@ -155,21 +138,26 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isMobile = MediaQuery.of(context).size.width < 768;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ─── Header ────────────────────────────────────────────
+          // Header
           Row(
             children: [
-              Text('Emergency Panel', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-              const Spacer(),
-              // GPS status
+              Expanded(
+                child: Text('Emergency Panel', style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: isMobile ? 22 : null,
+                )),
+              ),
               AnimatedBuilder(
                 animation: _pulseController,
                 builder: (context, child) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: _lat != null
                         ? Colors.green.withValues(alpha: 0.1)
@@ -185,121 +173,160 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                       if (_gpsLoading)
                         const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                       else
-                        Icon(
-                          _lat != null ? Icons.gps_fixed : Icons.gps_off,
-                          size: 14,
-                          color: _lat != null ? Colors.green : Colors.orange,
-                        ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _locationStatus ?? 'Detecting...',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: _lat != null ? Colors.green : Colors.orange,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                        Icon(_lat != null ? Icons.gps_fixed : Icons.gps_off, size: 14,
+                            color: _lat != null ? Colors.green : Colors.orange),
+                      const SizedBox(width: 5),
+                      Text(_locationStatus ?? 'Detecting...',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: _lat != null ? Colors.green : Colors.orange,
+                            fontWeight: FontWeight.w600, fontSize: 11,
+                          )),
                     ],
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          SizedBox(height: isMobile ? 16 : 24),
 
-          // ─── SOS Banner ────────────────────────────────────────
+          // SOS Banner
           AnimatedBuilder(
             animation: _pulseController,
             builder: (context, child) => Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.all(isMobile ? 14 : 20),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.red.shade600.withValues(alpha: 0.9 + _pulseController.value * 0.1),
-                    Colors.red.shade800,
-                  ],
-                ),
+                gradient: LinearGradient(colors: [
+                  Colors.red.shade600.withValues(alpha: 0.9 + _pulseController.value * 0.1),
+                  Colors.red.shade800,
+                ]),
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.red.withValues(alpha: 0.2 + _pulseController.value * 0.1),
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                boxShadow: [BoxShadow(
+                  color: Colors.red.withValues(alpha: 0.2 + _pulseController.value * 0.1),
+                  blurRadius: 20, offset: const Offset(0, 4),
+                )],
               ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.emergency, color: Colors.white, size: 32),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              child: isMobile
+                  ? Column(
                       children: [
-                        const Text('Emergency SOS', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        Text('Tap buttons below for immediate help',
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  // Quick call ambulance
-                  Material(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => _callNumber('102'),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        child: Row(
+                        Row(
                           children: [
-                            Icon(Icons.phone, color: Colors.red.shade700, size: 18),
-                            const SizedBox(width: 6),
-                            Text('Call 102', style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold)),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
+                              child: const Icon(Icons.emergency, color: Colors.white, size: 28),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Emergency SOS', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                  Text('Tap for immediate help', style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12)),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
-                      ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: Material(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => _callNumber('102'),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.phone, color: Colors.red.shade700, size: 18),
+                                    const SizedBox(width: 8),
+                                    Text('Call Ambulance 102', style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
+                          child: const Icon(Icons.emergency, color: Colors.white, size: 32),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Emergency SOS', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                              Text('Tap buttons below for immediate help', style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 13)),
+                            ],
+                          ),
+                        ),
+                        Material(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => _callNumber('102'),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.phone, color: Colors.red.shade700, size: 18),
+                                  const SizedBox(width: 6),
+                                  Text('Call 102', style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
             ),
           ),
-          const SizedBox(height: 24),
+          SizedBox(height: isMobile ? 16 : 24),
 
-          // ─── Nearby Facilities (Google Maps) ───────────────────
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _buildNearbyFacilities(theme)),
-              const SizedBox(width: 20),
-              Expanded(child: _buildEmergencyContacts(theme)),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _buildBreathingSteps(theme)),
-              const SizedBox(width: 20),
-              Expanded(child: _buildMedicationAwareness(theme)),
-            ],
-          ),
+          // Facilities + Contacts
+          if (isMobile) ...[
+            _buildNearbyFacilities(theme),
+            const SizedBox(height: 16),
+            _buildEmergencyContacts(theme, isMobile),
+            const SizedBox(height: 16),
+            _buildBreathingSteps(theme),
+            const SizedBox(height: 16),
+            _buildMedicationAwareness(theme),
+          ] else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildNearbyFacilities(theme)),
+                const SizedBox(width: 20),
+                Expanded(child: _buildEmergencyContacts(theme, isMobile)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildBreathingSteps(theme)),
+                const SizedBox(width: 20),
+                Expanded(child: _buildMedicationAwareness(theme)),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
-  // ─── Nearby Facilities Card ────────────────────────────────────────
   Widget _buildNearbyFacilities(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -322,61 +349,25 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
           Text('Opens Google Maps with your location',
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
           const SizedBox(height: 16),
-
-          // Hospital button
-          _facilityButton(
-            theme,
-            icon: Icons.local_hospital,
-            title: 'Nearest Hospital',
-            subtitle: 'Find hospitals near your location',
-            color: Colors.red,
-            onTap: _openNearbyHospitals,
-          ),
-          const SizedBox(height: 12),
-
-          // Pharmacy button
-          _facilityButton(
-            theme,
-            icon: Icons.local_pharmacy,
-            title: 'Nearest Pharmacy',
-            subtitle: 'Find pharmacies & medical stores',
-            color: Colors.green,
-            onTap: _openNearbyPharmacies,
-          ),
-          const SizedBox(height: 12),
-
-          // Clinic button
-          _facilityButton(
-            theme,
-            icon: Icons.medical_services,
-            title: 'Nearest Clinic',
-            subtitle: 'Find clinics & health centers',
-            color: Colors.blue,
-            onTap: _openNearbyClinics,
-          ),
-          const SizedBox(height: 12),
-
-          // Share location button
-          _facilityButton(
-            theme,
-            icon: Icons.share_location,
-            title: 'Share Live Location',
-            subtitle: 'Send location to emergency contact via WhatsApp',
-            color: Colors.purple,
-            onTap: _shareLocation,
-          ),
+          _facilityButton(theme, icon: Icons.local_hospital, title: 'Nearest Hospital',
+              subtitle: 'Find hospitals nearby', color: Colors.red, onTap: _openNearbyHospitals),
+          const SizedBox(height: 10),
+          _facilityButton(theme, icon: Icons.local_pharmacy, title: 'Nearest Pharmacy',
+              subtitle: 'Find pharmacies & medical stores', color: Colors.green, onTap: _openNearbyPharmacies),
+          const SizedBox(height: 10),
+          _facilityButton(theme, icon: Icons.medical_services, title: 'Nearest Clinic',
+              subtitle: 'Find clinics & health centers', color: Colors.blue, onTap: _openNearbyClinics),
+          const SizedBox(height: 10),
+          _facilityButton(theme, icon: Icons.share_location, title: 'Share Location',
+              subtitle: 'Send via WhatsApp', color: Colors.purple, onTap: _shareLocation),
         ],
       ),
     );
   }
 
-  Widget _facilityButton(
-    ThemeData theme, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color color,
-    required VoidCallback onTap,
+  Widget _facilityButton(ThemeData theme, {
+    required IconData icon, required String title, required String subtitle,
+    required Color color, required VoidCallback onTap,
   }) {
     return Material(
       color: color.withValues(alpha: 0.05),
@@ -385,16 +376,13 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: color, size: 22),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, color: color, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -402,19 +390,12 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    Text(subtitle,
-                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
+                    Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 11)),
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.open_in_new, size: 14, color: color),
-              ),
+              Icon(Icons.open_in_new, size: 14, color: color.withValues(alpha: 0.5)),
             ],
           ),
         ),
@@ -422,8 +403,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
     );
   }
 
-  // ─── Emergency Contacts Card ───────────────────────────────────────
-  Widget _buildEmergencyContacts(ThemeData theme) {
+  Widget _buildEmergencyContacts(ThemeData theme, bool isMobile) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -446,14 +426,12 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
           const SizedBox(height: 16),
 
-          // Contact cards
-          ..._emergencyContacts.map((contact) => _contactCard(theme, contact)),
+          ..._emergencyContacts.map((contact) => _contactCard(theme, contact, isMobile)),
 
           const SizedBox(height: 12),
-          const Divider(),
+          const Divider(height: 1),
           const SizedBox(height: 8),
 
-          // Government emergency numbers
           Text('Government Helplines', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
           _helplineButton(theme, '102', 'Ambulance', Colors.red),
@@ -466,7 +444,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
     );
   }
 
-  Widget _contactCard(ThemeData theme, Map<String, String> contact) {
+  Widget _contactCard(ThemeData theme, Map<String, String> contact, bool isMobile) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -477,35 +455,30 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
       ),
       child: Row(
         children: [
-          // Avatar
           CircleAvatar(
-            radius: 20,
+            radius: isMobile ? 16 : 20,
             backgroundColor: Colors.deepOrange.withValues(alpha: 0.1),
-            child: Text(
-              contact['name']![0],
-              style: TextStyle(color: Colors.deepOrange.shade700, fontWeight: FontWeight.bold, fontSize: 16),
-            ),
+            child: Text(contact['name']![0],
+                style: TextStyle(color: Colors.deepOrange.shade700, fontWeight: FontWeight.bold, fontSize: isMobile ? 13 : 16)),
           ),
-          const SizedBox(width: 12),
-          // Info
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(contact['name']!, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                Text('${contact['relation']} • ${contact['phone']}',
-                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
+                Text(contact['name']!, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: isMobile ? 13 : null)),
+                Text(isMobile ? contact['relation']! : '${contact['relation']} • ${contact['phone']}',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 11)),
               ],
             ),
           ),
-          // Action buttons
           _iconAction(Icons.phone, Colors.green, () => _callNumber(contact['phone']!)),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
           _iconAction(Icons.message, Colors.blue,
-              () => _sendSms(contact['phone']!, 'EMERGENCY! I need help. Please respond immediately.')),
-          const SizedBox(width: 6),
+              () => _sendSms(contact['phone']!, 'EMERGENCY! I need help.')),
+          const SizedBox(width: 4),
           _iconAction(Icons.chat, const Color(0xFF25D366),
-              () => _openWhatsApp(contact['phone']!, 'EMERGENCY! I need help urgently. Please call me or come to my location.')),
+              () => _openWhatsApp(contact['phone']!, 'EMERGENCY! I need help urgently.')),
         ],
       ),
     );
@@ -519,8 +492,8 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Icon(icon, size: 18, color: color),
+          padding: const EdgeInsets.all(7),
+          child: Icon(icon, size: 16, color: color),
         ),
       ),
     );
@@ -542,7 +515,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
               Text(number, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold, color: color)),
               const SizedBox(width: 8),
               Expanded(child: Text(label, style: theme.textTheme.bodySmall)),
-              Icon(Icons.call, size: 16, color: color),
+              Icon(Icons.call, size: 14, color: color),
             ],
           ),
         ),
@@ -550,14 +523,13 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
     );
   }
 
-  // ─── Breathing Steps ───────────────────────────────────────────────
   Widget _buildBreathingSteps(ThemeData theme) {
     final steps = [
       {'title': 'Stop & Sit Upright', 'desc': 'Find a comfortable position and sit upright to open your airways.'},
       {'title': 'Purse Your Lips', 'desc': 'Breathe in slowly through your nose for 2 seconds.'},
-      {'title': 'Exhale Slowly', 'desc': 'Exhale through pursed lips for 4 seconds, like blowing a candle.'},
+      {'title': 'Exhale Slowly', 'desc': 'Exhale through pursed lips for 4 seconds.'},
       {'title': 'Repeat 5 Times', 'desc': 'Continue this pattern. Focus only on your breath.'},
-      {'title': 'Seek Help if No Relief', 'desc': 'If breathing does not improve in 5 minutes, call emergency services.'},
+      {'title': 'Seek Help if No Relief', 'desc': 'If no improvement in 5 minutes, call emergency.'},
     ];
 
     return Container(
@@ -575,37 +547,28 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
             children: [
               Icon(Icons.emergency, color: Colors.red.shade600, size: 24),
               const SizedBox(width: 8),
-              Text('Emergency Breathing Steps', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+              Text('Emergency Breathing', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
             ],
           ),
           const SizedBox(height: 16),
           ...List.generate(steps.length, (i) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.only(bottom: 10),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Center(
-                    child: Text('${i + 1}',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade700, fontSize: 13)),
-                  ),
+                  width: 26, height: 26,
+                  decoration: BoxDecoration(color: Colors.red.shade50, shape: BoxShape.circle, border: Border.all(color: Colors.red.shade200)),
+                  child: Center(child: Text('${i + 1}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade700, fontSize: 12))),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(steps[i]['title']!, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                      Text(steps[i]['desc']!,
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
+                      Text(steps[i]['desc']!, style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 11)),
                     ],
                   ),
                 ),
@@ -617,7 +580,6 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
     );
   }
 
-  // ─── Medication Awareness ──────────────────────────────────────────
   Widget _buildMedicationAwareness(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -638,7 +600,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
           ),
           const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: Colors.amber.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(10),
@@ -646,23 +608,21 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
             ),
             child: Row(
               children: [
-                const Icon(Icons.info_outline, color: Colors.amber, size: 18),
+                const Icon(Icons.info_outline, color: Colors.amber, size: 16),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text('This is for awareness only – not a prescription.',
-                      style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic)),
-                ),
+                Expanded(child: Text('For awareness only – not a prescription.',
+                    style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, fontSize: 11))),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          _medicationItem(theme, 'Inhaler (Salbutamol)', 'Quick-relief bronchodilator for acute symptoms', Icons.air),
+          const SizedBox(height: 14),
+          _medicationItem(theme, 'Inhaler (Salbutamol)', 'Quick-relief bronchodilator', Icons.air),
           const SizedBox(height: 8),
-          _medicationItem(theme, 'Antihistamines', 'For allergic rhinitis and pollen-triggered reactions', Icons.healing),
+          _medicationItem(theme, 'Antihistamines', 'For allergic reactions', Icons.healing),
           const SizedBox(height: 8),
-          _medicationItem(theme, 'Nasal Spray', 'Corticosteroid spray for sinusitis management', Icons.sanitizer),
+          _medicationItem(theme, 'Nasal Spray', 'For sinusitis management', Icons.sanitizer),
           const SizedBox(height: 8),
-          _medicationItem(theme, 'Steam Inhalation', 'Non-medication relief for congestion', Icons.water_drop),
+          _medicationItem(theme, 'Steam Inhalation', 'Non-medication relief', Icons.water_drop),
         ],
       ),
     );
@@ -672,15 +632,15 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: Colors.orange.withValues(alpha: 0.7)),
-        const SizedBox(width: 10),
+        Icon(icon, size: 16, color: Colors.orange.withValues(alpha: 0.7)),
+        const SizedBox(width: 8),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(name, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-              Text(desc,
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6))),
+              Text(name, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 13)),
+              Text(desc, style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 11)),
             ],
           ),
         ),

@@ -10,12 +10,14 @@ class DashboardScreen extends StatelessWidget {
   final UserProfile profile;
   final VoidCallback onEditProfile;
   final DataProvider dataProvider;
+  final VoidCallback onEmergency;
 
   const DashboardScreen({
     super.key,
     required this.profile,
     required this.onEditProfile,
     required this.dataProvider,
+    required this.onEmergency,
   });
 
   @override
@@ -23,92 +25,173 @@ class DashboardScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final envData = dataProvider.envData;
     final riskResult = RiskCalculator.calculate(profile, envData);
+    final isMobile = MediaQuery.of(context).size.width < 768;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header
           Row(
             children: [
-              Text('Dashboard', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-              const Spacer(),
+              Expanded(
+                child: Text('Dashboard', style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: isMobile ? 22 : null,
+                )),
+              ),
               if (dataProvider.loading)
                 const Padding(
-                  padding: EdgeInsets.only(right: 12),
+                  padding: EdgeInsets.only(right: 8),
                   child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
                 ),
-              if (dataProvider.isRealData)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.cloud_done, size: 14, color: Colors.green),
-                      const SizedBox(width: 4),
-                      Text('Live Data', style: theme.textTheme.bodySmall?.copyWith(color: Colors.green, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
+              // GPS + Data source indicator
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: dataProvider.isRealData
+                      ? Colors.green.withValues(alpha: 0.1)
+                      : Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: dataProvider.isRealData
+                      ? Colors.green.withValues(alpha: 0.3)
+                      : Colors.orange.withValues(alpha: 0.3)),
                 ),
-              const SizedBox(width: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      dataProvider.gpsDetected ? Icons.gps_fixed : Icons.cloud_done,
+                      size: 13,
+                      color: dataProvider.isRealData ? Colors.green : Colors.orange,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      dataProvider.isRealData
+                          ? (dataProvider.gpsDetected ? 'GPS Live' : 'Live')
+                          : 'Simulated',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: dataProvider.isRealData ? Colors.green : Colors.orange,
+                        fontWeight: FontWeight.bold, fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               IconButton(
                 onPressed: dataProvider.loading ? null : () => dataProvider.refresh(),
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Icons.refresh, size: 20),
                 tooltip: 'Refresh data',
               ),
             ],
           ),
+
+          // Error / status messages
           if (dataProvider.error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(dataProvider.error!, style: theme.textTheme.bodySmall?.copyWith(color: Colors.orange)),
-            ),
-          const SizedBox(height: 24),
-
-          // Top row: Profile + AQI
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 1,
-                child: ProfileCard(
-                  profile: profile,
-                  onEdit: onEditProfile,
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber, size: 16, color: Colors.orange),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(dataProvider.error!, style: theme.textTheme.bodySmall?.copyWith(color: Colors.orange.shade800))),
+                  ],
                 ),
               ),
-              const SizedBox(width: 20),
-              Expanded(
-                flex: 1,
-                child: AqiCard(data: envData),
+            ),
+
+          // Last updated time
+          if (dataProvider.lastUpdated != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Last updated: ${_formatTime(dataProvider.lastUpdated!)} • ${dataProvider.cityName} • Auto-refreshes every 10 min',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4), fontSize: 10,
+                ),
               ),
-            ],
+            ),
+
+          SizedBox(height: isMobile ? 12 : 20),
+
+          // Emergency SOS Button
+          GestureDetector(
+            onTap: onEmergency,
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(vertical: isMobile ? 14 : 16, horizontal: 20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [Colors.red.shade600, Colors.red.shade800]),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: Colors.red.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4))],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.emergency, color: Colors.white, size: 26),
+                  const SizedBox(width: 12),
+                  Text('Emergency Breathing Help',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: Colors.white, fontWeight: FontWeight.bold,
+                        fontSize: isMobile ? 15 : 17,
+                      )),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+                ],
+              ),
+            ),
           ),
 
-          const SizedBox(height: 24),
+          SizedBox(height: isMobile ? 16 : 24),
 
-          // Risk Rating + Smart Message
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 1,
-                child: RiskGauge(result: riskResult),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                flex: 1,
-                child: _buildSmartMessage(theme, riskResult),
-              ),
-            ],
-          ),
+          // Profile + AQI
+          if (isMobile) ...[
+            ProfileCard(profile: profile, onEdit: onEditProfile),
+            const SizedBox(height: 16),
+            AqiCard(data: envData),
+          ] else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: ProfileCard(profile: profile, onEdit: onEditProfile)),
+                const SizedBox(width: 20),
+                Expanded(child: AqiCard(data: envData)),
+              ],
+            ),
+
+          SizedBox(height: isMobile ? 16 : 24),
+
+          // Risk + Smart Message
+          if (isMobile) ...[
+            RiskGauge(result: riskResult),
+            const SizedBox(height: 16),
+            _buildSmartMessage(theme, riskResult),
+          ] else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: RiskGauge(result: riskResult)),
+                const SizedBox(width: 20),
+                Expanded(child: _buildSmartMessage(theme, riskResult)),
+              ],
+            ),
         ],
       ),
     );
+  }
+
+  String _formatTime(DateTime dt) {
+    final h = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+    final amPm = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$h:${dt.minute.toString().padLeft(2, '0')} $amPm';
   }
 
   Widget _buildSmartMessage(ThemeData theme, RiskResult riskResult) {
@@ -124,9 +207,7 @@ class DashboardScreen extends StatelessWidget {
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withValues(alpha: 0.3)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -146,10 +227,7 @@ class DashboardScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border(left: BorderSide(color: color, width: 4)),
             ),
-            child: Text(
-              riskResult.message,
-              style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
-            ),
+            child: Text(riskResult.message, style: theme.textTheme.bodyLarge?.copyWith(height: 1.5)),
           ),
           const SizedBox(height: 16),
           Text('Contributing Factors:', style: theme.textTheme.titleSmall),
@@ -160,7 +238,7 @@ class DashboardScreen extends StatelessWidget {
               children: [
                 Icon(Icons.circle, size: 6, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
                 const SizedBox(width: 8),
-                Text(f, style: theme.textTheme.bodyMedium),
+                Expanded(child: Text(f, style: theme.textTheme.bodyMedium)),
               ],
             ),
           )),

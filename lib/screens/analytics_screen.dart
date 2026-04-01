@@ -11,8 +11,8 @@ class AnalyticsScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final weeklyData = dataProvider.weeklyData;
     final healthScores = _deriveHealthScores(weeklyData);
+    final isMobile = MediaQuery.of(context).size.width < 768;
 
-    // Compute summary stats from real data
     final avgAqi = weeklyData.isEmpty ? 0 : weeklyData.map((d) => d['aqi'] as int).reduce((a, b) => a + b) ~/ weeklyData.length;
     final avgHealth = healthScores.isEmpty ? 0 : healthScores.map((d) => d['score'] as int).reduce((a, b) => a + b) ~/ healthScores.length;
     final highRiskDays = weeklyData.where((d) => (d['aqi'] as int) > 150).length;
@@ -21,17 +21,21 @@ class AnalyticsScreen extends StatelessWidget {
         : weeklyData.reduce((a, b) => (a['aqi'] as int) < (b['aqi'] as int) ? a : b)['day'] as String;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text('Analytics', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-              const Spacer(),
+              Expanded(
+                child: Text('Analytics', style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: isMobile ? 22 : null,
+                )),
+              ),
               if (dataProvider.isRealData)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.green.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
@@ -42,49 +46,75 @@ class AnalyticsScreen extends StatelessWidget {
                     children: [
                       const Icon(Icons.cloud_done, size: 14, color: Colors.green),
                       const SizedBox(width: 4),
-                      Text('7-Day Live Data', style: theme.textTheme.bodySmall?.copyWith(color: Colors.green, fontWeight: FontWeight.bold)),
+                      Text(isMobile ? 'Live' : '7-Day Live Data',
+                          style: theme.textTheme.bodySmall?.copyWith(color: Colors.green, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 24),
+          SizedBox(height: isMobile ? 16 : 24),
 
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _buildAqiSymptomsChart(theme, weeklyData)),
-              const SizedBox(width: 20),
-              Expanded(child: _buildHealthScoreChart(theme, healthScores)),
-            ],
-          ),
+          // Charts
+          if (isMobile) ...[
+            _buildAqiSymptomsChart(theme, weeklyData),
+            const SizedBox(height: 16),
+            _buildHealthScoreChart(theme, healthScores),
+          ] else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _buildAqiSymptomsChart(theme, weeklyData)),
+                const SizedBox(width: 20),
+                Expanded(child: _buildHealthScoreChart(theme, healthScores)),
+              ],
+            ),
 
-          const SizedBox(height: 24),
+          SizedBox(height: isMobile ? 16 : 24),
 
-          // Insight card
           _buildInsightCard(theme, weeklyData),
 
-          const SizedBox(height: 20),
+          SizedBox(height: isMobile ? 16 : 20),
 
-          // Summary stats from real data
-          Row(
-            children: [
-              _statCard(theme, 'Avg AQI', '$avgAqi', Icons.air, Colors.orange),
-              const SizedBox(width: 16),
-              _statCard(theme, 'Avg Health Score', '$avgHealth', Icons.favorite, Colors.red),
-              const SizedBox(width: 16),
-              _statCard(theme, 'High Risk Days', '$highRiskDays', Icons.warning_amber, Colors.deepOrange),
-              const SizedBox(width: 16),
-              _statCard(theme, 'Best Day', bestDay, Icons.star, Colors.green),
-            ],
-          ),
+          // Stats
+          if (isMobile)
+            Column(
+              children: [
+                Row(
+                  children: [
+                    _statCard(theme, 'Avg AQI', '$avgAqi', Icons.air, Colors.orange),
+                    const SizedBox(width: 12),
+                    _statCard(theme, 'Health Score', '$avgHealth', Icons.favorite, Colors.red),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    _statCard(theme, 'High Risk', '$highRiskDays days', Icons.warning_amber, Colors.deepOrange),
+                    const SizedBox(width: 12),
+                    _statCard(theme, 'Best Day', bestDay, Icons.star, Colors.green),
+                  ],
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                _statCard(theme, 'Avg AQI', '$avgAqi', Icons.air, Colors.orange),
+                const SizedBox(width: 16),
+                _statCard(theme, 'Avg Health Score', '$avgHealth', Icons.favorite, Colors.red),
+                const SizedBox(width: 16),
+                _statCard(theme, 'High Risk Days', '$highRiskDays', Icons.warning_amber, Colors.deepOrange),
+                const SizedBox(width: 16),
+                _statCard(theme, 'Best Day', bestDay, Icons.star, Colors.green),
+              ],
+            ),
         ],
       ),
     );
   }
 
   List<Map<String, dynamic>> _deriveHealthScores(List<Map<String, dynamic>> weeklyData) {
-    // Derive health score: inverse of AQI (higher AQI = lower health score)
     return weeklyData.map((d) {
       final aqi = d['aqi'] as int;
       final score = (100 - (aqi * 0.4)).round().clamp(10, 100);
@@ -93,7 +123,6 @@ class AnalyticsScreen extends StatelessWidget {
   }
 
   Widget _buildInsightCard(ThemeData theme, List<Map<String, dynamic>> weeklyData) {
-    // Generate dynamic insight from data
     final highDays = weeklyData.where((d) => (d['aqi'] as int) > 150).map((d) => d['day']).toList();
     final insight = highDays.isEmpty
         ? 'Air quality has been within acceptable limits this week. Continue normal outdoor activities.'
@@ -109,6 +138,7 @@ class AnalyticsScreen extends StatelessWidget {
         border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.all(12),

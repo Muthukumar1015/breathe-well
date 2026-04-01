@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/environment_data.dart';
 import 'api_service.dart';
 import 'mock_data.dart';
@@ -12,6 +14,9 @@ class DataProvider extends ChangeNotifier {
   double _lat = 19.076; // Mumbai default
   double _lon = 72.8777;
   String _cityName = 'Mumbai, Maharashtra';
+  DateTime? _lastUpdated;
+  Timer? _refreshTimer;
+  bool _gpsDetected = false;
 
   EnvironmentData get envData => _envData ?? MockData.getEnvironmentData();
   List<Map<String, dynamic>> get weeklyData => _weeklyData ?? MockData.getWeeklyData();
@@ -21,38 +26,91 @@ class DataProvider extends ChangeNotifier {
   String get cityName => _cityName;
   double get lat => _lat;
   double get lon => _lon;
+  DateTime? get lastUpdated => _lastUpdated;
+  bool get gpsDetected => _gpsDetected;
 
-  /// Search city and fetch real AQI data
-  Future<void> loadCity(String city) async {
+  /// Initialize: try GPS first, fallback to default city
+  Future<void> init() async {
+    final gpsSuccess = await _detectGpsLocation();
+    if (!gpsSuccess) {
+      // Fallback to default location
+      await _fetchDataForCoords(_lat, _lon, _cityName);
+    }
+    // Start auto-refresh every 10 minutes
+    _startAutoRefresh();
+  }
+
+  /// Detect GPS location and fetch data for it
+  Future<bool> _detectGpsLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _error = 'Location services disabled. Enable GPS for accurate data.';
+        notifyListeners();
+        return false;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _error = 'Location permission denied. Using default location.';
+          notifyListeners();
+          return false;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        _error = 'Location permission permanently denied. Go to settings to enable.';
+        notifyListeners();
+        return false;
+      }
+
+      _loading = true;
+      notifyListeners();
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+
+      _lat = position.latitude;
+      _lon = position.longitude;
+      _gpsDetected = true;
+
+      // Reverse geocode to get city name
+      final placeName = await ApiService.reverseGeocode(_lat, _lon);
+      _cityName = placeName ?? '${_lat.toStringAsFixed(2)}, ${_lon.toStringAsFixed(2)}';
+
+      // Fetch environmental data for GPS coordinates
+      await _fetchDataForCoords(_lat, _lon, _cityName);
+      return true;
+    } catch (e) {
+      _error = 'GPS detection failed. Using default location.';
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Fetch AQI + weekly data for specific coordinates
+  Future<void> _fetchDataForCoords(double lat, double lon, String locationName) async {
     _loading = true;
     _error = null;
     notifyListeners();
 
-    // Step 1: Geocode city
-    final geo = await ApiService.geocodeCity(city);
-    if (geo == null) {
-      _error = 'City not found. Using cached data.';
-      _loading = false;
-      notifyListeners();
-      return;
-    }
-
-    _lat = geo.lat;
-    _lon = geo.lon;
-    _cityName = geo.name;
-
-    // Step 2: Fetch real AQI
-    final env = await ApiService.fetchAirQuality(_lat, _lon, _cityName);
+    // Fetch real-time AQI
+    final env = await ApiService.fetchAirQuality(lat, lon, locationName);
     if (env != null) {
       _envData = env;
       _isRealData = true;
+      _lastUpdated = DateTime.now();
     } else {
-      _error = 'API unavailable. Using simulated data.';
+      _error = 'Unable to retrieve environmental data. Showing cached values.';
       _isRealData = false;
     }
 
-    // Step 3: Fetch weekly history
-    final weekly = await ApiService.fetchWeeklyAqi(_lat, _lon);
+    // Fetch weekly history
+    final weekly = await ApiService.fetchWeeklyAqi(lat, lon);
     if (weekly != null && weekly.isNotEmpty) {
       _weeklyData = weekly;
     }
@@ -61,13 +119,65 @@ class DataProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Refresh current location data
-  Future<void> refresh() async {
-    await loadCity(_cityName.split(',').first.trim());
+  /// Search city and fetch real AQI data (when user changes location)
+  Future<void> loadCity(String city) async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+
+    // Geocode city
+    final geo = await ApiService.geocodeCity(city);
+    if (geo == null) {
+      _error = 'City "$city" not found. Keeping current data.';
+      _loading = false;
+      notifyListeners();
+      return;
+    }
+
+    _lat = geo.lat;
+    _lon = geo.lon;
+    _cityName = geo.name;
+    _gpsDetected = false; // User manually changed location
+
+    await _fetchDataForCoords(_lat, _lon, _cityName);
   }
 
-  /// Load default city on startup
-  Future<void> init() async {
-    await loadCity('Mumbai');
+  /// Load data by coordinates directly (from GPS)
+  Future<void> loadCoords(double lat, double lon) async {
+    _lat = lat;
+    _lon = lon;
+    _gpsDetected = true;
+
+    final placeName = await ApiService.reverseGeocode(lat, lon);
+    _cityName = placeName ?? '${lat.toStringAsFixed(2)}, ${lon.toStringAsFixed(2)}';
+
+    await _fetchDataForCoords(lat, lon, _cityName);
+  }
+
+  /// Refresh current location data
+  Future<void> refresh() async {
+    if (_gpsDetected) {
+      // Re-detect GPS for latest position
+      final success = await _detectGpsLocation();
+      if (!success) {
+        await _fetchDataForCoords(_lat, _lon, _cityName);
+      }
+    } else {
+      await _fetchDataForCoords(_lat, _lon, _cityName);
+    }
+  }
+
+  /// Auto-refresh every 10 minutes
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(minutes: 10), (_) {
+      refresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 }

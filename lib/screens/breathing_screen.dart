@@ -135,12 +135,17 @@ class _BreathingScreenState extends State<BreathingScreen> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isMobile = MediaQuery.of(context).size.width < 768;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Breathing Exercises', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+          Text('Breathing Exercises', style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            fontSize: isMobile ? 22 : null,
+          )),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -153,29 +158,83 @@ class _BreathingScreenState extends State<BreathingScreen> with SingleTickerProv
               style: theme.textTheme.bodySmall?.copyWith(color: Colors.teal),
             ),
           ),
-          const SizedBox(height: 24),
+          SizedBox(height: isMobile ? 16 : 24),
 
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Exercise selector
-              Expanded(
-                flex: 1,
-                child: _buildExerciseList(theme),
-              ),
-              const SizedBox(width: 24),
-              // Animation + controls
-              Expanded(
-                flex: 2,
-                child: _buildExercisePanel(theme),
-              ),
-            ],
+          if (isMobile) ...[
+            // Mobile: exercise selector as horizontal chips, then panel below
+            _buildExerciseChips(theme),
+            const SizedBox(height: 16),
+            _buildExercisePanel(theme, isMobile),
+          ] else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 1, child: _buildExerciseList(theme)),
+                const SizedBox(width: 24),
+                Expanded(flex: 2, child: _buildExercisePanel(theme, isMobile)),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Mobile: compact exercise selector
+  Widget _buildExerciseChips(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Techniques', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _exercises.map((e) {
+              final isSelected = e == _selected;
+              final isRecommended = e.recommendedFor.contains(widget.profile.condition);
+              return GestureDetector(
+                onTap: _isRunning ? null : () => setState(() => _selected = e),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? Colors.teal.withValues(alpha: 0.15) : theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected ? Colors.teal : Colors.transparent,
+                      width: isSelected ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(e.name, style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected ? Colors.teal : null,
+                      )),
+                      if (isRecommended) ...[
+                        const SizedBox(width: 4),
+                        Icon(Icons.star, size: 12, color: Colors.teal.shade400),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
     );
   }
 
+  // Desktop: full exercise list
   Widget _buildExerciseList(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -234,9 +293,9 @@ class _BreathingScreenState extends State<BreathingScreen> with SingleTickerProv
     );
   }
 
-  Widget _buildExercisePanel(ThemeData theme) {
+  Widget _buildExercisePanel(ThemeData theme, bool isMobile) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -244,26 +303,33 @@ class _BreathingScreenState extends State<BreathingScreen> with SingleTickerProv
       ),
       child: Column(
         children: [
-          Text(_selected.name, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+          Text(_selected.name, style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            fontSize: isMobile ? 18 : null,
+          )),
           const SizedBox(height: 8),
-          Text(_selected.description, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)), textAlign: TextAlign.center),
+          Text(_selected.description, style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+          ), textAlign: TextAlign.center),
           const SizedBox(height: 8),
           Text(
             'Pattern: ${_selected.inhaleSeconds}s inhale – ${_selected.holdSeconds}s hold – ${_selected.exhaleSeconds}s exhale',
             style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 32),
+          SizedBox(height: isMobile ? 20 : 32),
 
           // Breathing animation circle
           AnimatedBuilder(
             animation: _animController,
             builder: (context, child) {
               final scale = _isRunning ? 0.7 + (_animController.value * 0.3) : 1.0;
+              final circleSize = isMobile ? 140.0 : 180.0;
+              final innerSize = isMobile ? 90.0 : 120.0;
               return Transform.scale(
                 scale: scale,
                 child: Container(
-                  width: 180,
-                  height: 180,
+                  width: circleSize,
+                  height: circleSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
@@ -276,8 +342,8 @@ class _BreathingScreenState extends State<BreathingScreen> with SingleTickerProv
                   ),
                   child: Center(
                     child: Container(
-                      width: 120,
-                      height: 120,
+                      width: innerSize,
+                      height: innerSize,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.teal.withValues(alpha: 0.15),
@@ -289,6 +355,7 @@ class _BreathingScreenState extends State<BreathingScreen> with SingleTickerProv
                           style: theme.textTheme.titleLarge?.copyWith(
                             color: Colors.teal,
                             fontWeight: FontWeight.bold,
+                            fontSize: isMobile ? 18 : null,
                           ),
                         ),
                       ),
@@ -299,7 +366,7 @@ class _BreathingScreenState extends State<BreathingScreen> with SingleTickerProv
             },
           ),
 
-          const SizedBox(height: 24),
+          SizedBox(height: isMobile ? 16 : 24),
 
           if (_isRunning) ...[
             LinearProgressIndicator(
@@ -320,12 +387,14 @@ class _BreathingScreenState extends State<BreathingScreen> with SingleTickerProv
 
           // Duration control
           if (!_isRunning)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
               children: [
                 Text('Duration: ', style: theme.textTheme.bodyMedium),
                 ...([2, 3, 5, 10]).map((d) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: ChoiceChip(
                     label: Text('${d}m'),
                     selected: _durationMinutes == d,
